@@ -1,0 +1,22 @@
+{
+  "name": "cloudrun-nodejs",
+  "version": "1.0.0",
+  "description": "node",
+  "main": "index.js",
+  "author": "lucas",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "dependencies": {
+  "ws": "^8.0.0"
+  }
+}
+  
+
+
