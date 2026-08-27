@@ -1,93 +1,117 @@
-const os = require('os');
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
 const net = require('net');
-const { exec, execSync } = require('child_process');
-function ensureModule(name) {
-    try {
-        require.resolve(name);
-    } catch (e) {
-        console.log(`Module '${name}' not found. Installing...`);
-        execSync(`npm install ${name}`, { stdio: 'inherit' });
-    }
-}
-const { WebSocket, createWebSocketStream } = require('ws');
-const subtxt = `${process.env.HOME}/agsbx/jh.txt`;
-const NAME = process.env.NAME || os.hostname();
-const PORT = process.env.PORT || 8080;
-const uuid = process.env.uuid || '516469e6-851c-4d5d-a651-922ee60ef49a';
-const DOMAIN = process.env.DOMAIN || 'YOUR.DOMAIN';
-const vlessInfo = `vless://${uuid}@${DOMAIN}:443?encryption=none&security=tls&sni=${DOMAIN}&fp=chrome&type=ws&host=${DOMAIN}&path=%2F#Vl-ws-tls-${NAME}`;
-console.log(`vless-ws-tls节点分享: ${vlessInfo}`);
+const path = require('path');
+const { exec } = require('child_process');
 
-fs.chmod("start.sh", 0o777, (err) => {
-    if (err) {
-        console.error(`start.sh empowerment failed: ${err}`);
-        return;
-    }
-    console.log(`start.sh empowerment successful`);
-    const child = exec('bash start.sh');
-    child.stdout.on('data', (data) => console.log(data));
-    child.stderr.on('data', (data) => console.error(data));
-    child.on('close', (code) => {
-        console.log(`child process exited with code ${code}`);
-        console.clear();
-        console.log(`App is running`);
-    });
-});
+const { WebSocket, createWebSocketStream } = require('ws');
+
+const NAME = process.env.NAME || os.hostname();
+const subtxt = path.join(os.homedir(), 'agsb', 'jh.txt');
+const PORT = process.env.PORT || 8080;
+//const DOMAIN = process.env.DOMAIN || 'no_domain';
+const DOMAIN = process.env.DOMAIN || process.env.agn || 'no_domain';
+const rawUUID = process.env.uuid || 'subuuid';
+const hasUUID = !!process.env.uuid;
+//const hasDOMAIN = !!process.env.DOMAIN;
+const hasDOMAIN = !!(process.env.DOMAIN || process.env.agn);
+const uuid = rawUUID.replace(/-/g, "");
+const vlessURL = (hasUUID && hasDOMAIN)
+  ? `vless://${rawUUID}@${DOMAIN}:443?encryption=none&security=tls&sni=${DOMAIN}&fp=chrome&type=ws&host=${DOMAIN}&path=%2F#Vl-ws-tls-${NAME}`
+  : '';
 
 const server = http.createServer((req, res) => {
-    if (req.url === '/') {
-        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('🟢恭喜！Argosbx小钢炮脚本-nodejs版部署成功！\n\n查看节点信息路径：/你的uuid');
-        return;
-    }
-
-    if (req.url === `/${uuid}`) {
-        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-        if (fs.existsSync(subtxt)) {
-            fs.readFile(subtxt, 'utf8', (err, data) => {
-                if (err) {
-                    console.error(err);
-                    res.end(`${vlessInfo}`);
-                } else {
-                    res.end(`${vlessInfo}\n${data}`);
-                }
-            });
-        } else {
-            res.end(`${vlessInfo}`);
-        }
-        return;
-    }
-
+  if (req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('🟢恭喜！部署成功！欢迎使用甬哥YGkkk-ArgoSB小钢炮脚本💣 【当前版本V25.8.8】\n\n查看节点信息路径：/你的uuid或者/subuuid');
+  } else if (req.url === `/${rawUUID}`) {
+    fs.readFile(subtxt, 'utf8', (err, data) => {
+      const result = !err && data ? (vlessURL ? `${vlessURL}\n${data}` : data) : vlessURL;
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(result);
+    });
+  } else {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('404 Not Found');
+    res.end('❌Not Found：路径错误！！！\n\n查看节点信息路径：/你的uuid或者/subuuid');
+  }
 });
 
 server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+  console.log(`✅Server is running on port ${PORT}`);
 
-const wss = new (require('ws').Server)({ server });
-const uuidkey = uuid.replace(/-/g, "");
-wss.on('connection', ws => {
-    ws.once('message', msg => {
-        const [VERSION] = msg;
-        const id = msg.slice(1, 17);
-        if (!id.every((v, i) => v == parseInt(uuidkey.substr(i * 2, 2), 16))) return;
-        let i = msg.slice(17, 18).readUInt8() + 19;
-        const port = msg.slice(i, i += 2).readUInt16BE(0);
-        const ATYP = msg.slice(i, i += 1).readUInt8();
-        const host = ATYP == 1 ? msg.slice(i, i += 4).join('.') :
-            (ATYP == 2 ? new TextDecoder().decode(msg.slice(i + 1, i += 1 + msg.slice(i, i + 1).readUInt8())) :
-                (ATYP == 3 ? msg.slice(i, i += 16)
-                    .reduce((s, b, i, a) => (i % 2 ? s.concat(a.slice(i - 1, i + 1)) : s), [])
-                    .map(b => b.readUInt16BE(0).toString(16)).join(':') : ''));
-        ws.send(new Uint8Array([VERSION, 0]));
-        const duplex = createWebSocketStream(ws);
-        net.connect({ host, port }, function () {
-            this.write(msg.slice(i));
-            duplex.on('error', () => { }).pipe(this).on('error', () => { }).pipe(duplex);
-        }).on('error', () => { });
-    }).on('error', () => { });
+  const argosbPath = '/home/node/agsb/argosb.sh';
+  if (fs.existsSync(argosbPath)) {
+    const child = exec(`bash "${argosbPath}"`, {
+	    env: {
+		    ...process.env,
+		    //vlpt: process.env.vlpt || '',
+		    vmpt: process.env.vmpt || '44392',
+		    //hypt: process.env.hypt || '',
+		    //tupt: process.env.tupt || '',
+		    //xhpt: process.env.xhpt || '',
+		    //anpt: process.env.anpt || '',
+		    argo: process.env.argo || 'y',
+		    agn: process.env.agn || 'xxx.xxx.xxx.xxx',
+		    agk: process.env.agk || 'xxxxxxxxxxxxxxx'
+		     }
+    });
+    child.stdout.on('data', chunk => process.stdout.write(chunk));
+    child.stderr.on('data', chunk => process.stderr.write(chunk));
+    child.on('close', (code) => {
+
+      if (code !== 0) {
+	      console.error(`❌ argosb.sh 执行失败，退出码: ${code}`);
+	      return;
+      }
+      console.log(`✅ argosb.sh 执行成功，退出码: ${code}`);
+      console.log(`🚀App is running`);
+
+      if (hasUUID && hasDOMAIN) {
+        const wss = new WebSocket.Server({ server });
+        wss.on('connection', ws => {
+          ws.once('message', msg => {
+            if (!(msg instanceof Buffer)) msg = Buffer.from(msg);
+            if (msg.length < 19) return;
+
+            const [VERSION] = msg;
+            const id = msg.slice(1, 17);
+            if (!id.every((v, i) => v === parseInt(uuid.substr(i * 2, 2), 16))) return;
+
+            const offset = msg.readUInt8(17);
+            let i = 19 + offset;
+            if (msg.length < i + 3) return;
+
+            const port = msg.readUInt16BE(i);
+            i += 2;
+            const ATYP = msg.readUInt8(i++);
+            let host = '';
+            try {
+              if (ATYP === 1) {
+                host = msg.slice(i, i += 4).join('.');
+              } else if (ATYP === 2) {
+                const len = msg[i];
+                host = new TextDecoder().decode(msg.slice(i + 1, i += 1 + len));
+              } else if (ATYP === 3) {
+                host = msg.slice(i, i += 16)
+                  .reduce((s, b, j, a) => (j % 2 ? s.concat(a.slice(j - 1, j + 1)) : s), [])
+                  .map(b => b.readUInt16BE(0).toString(16))
+                  .join(':');
+              } else return;
+            } catch (err) { return; }
+
+            ws.send(new Uint8Array([VERSION, 0]));
+            const duplex = createWebSocketStream(ws);
+            net.connect({ host, port }, function () {
+              this.write(msg.slice(i));
+              duplex.on('error', () => {}).pipe(this).on('error', () => {}).pipe(duplex);
+            }).on('error', () => {});
+          }).on('error', () => {});
+        });
+        console.log(`\n💣Vless-ws-tls节点分享: \n${vlessURL}\n`);
+      }
+    });
+  } else {
+    console.error(`argosb.sh not found at ${argosbPath}`);
+  }
 });
